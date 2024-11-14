@@ -1,0 +1,160 @@
+#include "mbed.h"
+BufferedSerial MATLAB(USBTX, USBRX, 9600); // tx, rx
+
+float Periodo; // Inicializamos la variable en la que se calcula la frecuencia a través de los RPM
+const int STEPS = 400; // Inicializamos la constante en la que se encuentran los microsteps del driver
+int pasostotales1 = 0; // Pasos totales para motor 1
+int pasostotales2 = 0; // Pasos totales para motor 2
+int NUMVUELTAS1 = 0; // Vueltas para motor 1
+int NUMVUELTAS2 = 0; // Vueltas para motor 2
+bool Girando1 = true; // Estado de giro para motor 1
+bool Girando2 = true; // Estado de giro para motor 2
+volatile int64_t CantidadPulsos1 = 0; // Pulsos para motor 1
+volatile int64_t CantidadPulsos2 = 0; // Pulsos para motor 2
+// Creamos un ticker para los pulsos
+Ticker Pulsos1;
+Ticker Pulsos2;
+
+void FunGira1(void);
+void FunGira2(void);
+
+// Pines para controlar el NEMA a través del driver
+DigitalOut ENABLENEMA1(PD_7);
+DigitalOut DireccionNema1(PD_6);
+DigitalOut PULSO1(PD_5); // Definimos el pin de salida
+
+DigitalOut ENABLENEMA2(PB_1); // Habilitación para motor 2
+DigitalOut DireccionNema2(PC_2); // Dirección para motor 2
+DigitalOut PULSO2(PF_4); // Pin de salida para motor 2
+
+InterruptIn FINX0(PF_3, PullUp); 
+InterruptIn FINX1(PF_5, PullUp); // Sensor para motor 2
+volatile bool motorState1 = false; // Estado motor 1
+volatile bool motorState2 = false; // Estado motor 2
+
+Timeout TimeAntirrebotePos;
+// Inicializamos en true para que pueda detectar el primer pulso
+volatile bool NumSensorPos1 = true;
+volatile bool NumSensorPos2 = true;
+
+// Creamos las interrupciones generadas por los pines de entrada
+InterruptIn ButtonPos1(PA_10); 
+InterruptIn ButtonPos2(PA_11); // Botón para motor 2
+
+// Función para configurar los datos de los esclavos
+void sensoresCarrera1();
+void sensoresCarrera2();
+
+int main(void)
+{
+    //FINX0.fall(&sensoresCarrera1);
+    //FINX1.fall(&sensoresCarrera2);
+
+    // Inicializamos los pines de salida para parar los NEMA
+    ENABLENEMA1 = 1; 
+    ENABLENEMA2 = 1; 
+    DireccionNema1 = 0;
+    DireccionNema2 = 0;
+
+    while (true) {
+        /*char bufferOUT[200]; // Creamos buffer para enviar el mensaje
+        // Guardamos lo que se envía en un arreglo y sacamos el tamaño del arreglo
+        if (Girando1 || Girando2) {
+            int TAM = snprintf(bufferOUT, sizeof(bufferOUT), "%d,%d,%d,%d,%d,%d \n", 
+                               NUMVUELTAS1, NUMVUELTAS2, Girando1, Girando2);
+            MATLAB.write(bufferOUT, TAM); // Enviamos el arreglo por el Serial
+            ThisThread::sleep_for(50ms);
+        }*/
+
+        if (MATLAB.readable()) { // Recibimos datos desde MATLAB
+            char BufferIN[800]; // Creamos buffer para almacenar los datos recibidos
+            int GIROS1 = 0, RPM1 = 0, Direccion1 = 0;
+            int GIROS2 = 0, RPM2 = 0, Direccion2 = 0;
+
+            CantidadPulsos1 = 0; // Reiniciamos el contador motor 1
+            CantidadPulsos2 = 0;
+            NUMVUELTAS1 = 0; // Reiniciamos el contador motor 1 CantidadPulsos2 = 0; // Reiniciamos el contador motor 2
+            NUMVUELTAS2 = 0; // Reiniciamos el contador motor 2
+
+            MATLAB.read(BufferIN, sizeof(BufferIN)); // Recibimos el arreglo por el Serial
+            // Creamos una lista del arreglo y le asignamos una variable a cada uno
+            sscanf(BufferIN, "%d,%d,%d,%d,%d,%d", &GIROS1, &RPM1, &Direccion1, &GIROS2, &RPM2, &Direccion2);
+            ThisThread::sleep_for(50ms);
+
+            Periodo = float(60) / (STEPS * RPM1); // Calculamos el periodo de los pasos para motor 1
+            pasostotales1 = GIROS1 * STEPS; // Calculamos la cantidad de pasos totales para motor 1
+            ENABLENEMA1 = 0; // Habilitamos el ENABLE del driver para que gire el motor 1
+            DireccionNema1 = Direccion1;
+            Pulsos1.attach(&FunGira1, Periodo); // Creamos los pulsos para motor 1
+
+            Periodo = float(60) / (STEPS * RPM2); // Calculamos el periodo de los pasos para motor 2
+            pasostotales2 = GIROS2 * STEPS; // Calculamos la cantidad de pasos totales para motor 2
+            ENABLENEMA2 = 0; // Habilitamos el ENABLE del driver para que gire el motor 2
+            DireccionNema2 = Direccion2;
+            Pulsos2.attach(&FunGira2, Periodo); // Creamos los pulsos para motor 2
+        }
+        ThisThread::sleep_for(50ms);
+    }
+}
+
+void sensoresCarrera1() {
+    do {
+        if (FINX0.read() == 1) {
+            ENABLENEMA1 = 0; // Apagar el motor 1 (disable)
+            motorState1 = false;
+        } else {
+            ENABLENEMA1 = 1; // Encender el motor 1 (enable)
+            motorState1 = true;
+        }
+    } while (FINX0 == 0);
+}
+
+void sensoresCarrera2() {
+    do {
+        if (FINX1.read() == 1) {
+            ENABLENEMA2 = 0; // Apagar el motor 2 (disable)
+            motorState2 = false;
+        } else {
+            ENABLENEMA2 = 1; // Encender el motor 2 (enable)
+            motorState2 = true;
+        }
+    } while (FINX1 == 0);
+}
+
+void FunGira1(void) {
+    if (CantidadPulsos1 < pasostotales1) {
+        PULSO1 = 1; // Ponemos en alto la salida para motor 1
+        wait_us(10);
+        PULSO1 = 0;
+        CantidadPulsos1++; // Contamos los pulsos para motor 1
+        NUMVUELTAS1 = CantidadPulsos1 / STEPS; // Calculamos el número de vueltas que llevamos para motor 1
+    } else {
+        Girando1 = true;
+        Pulsos1.detach(); // Detenemos los pulsos para motor 1
+        ENABLENEMA1 = 1; // Deshabilitamos el ENABLE del motor 1 para que no gire
+        DireccionNema1 = 0;
+    }
+}
+
+void FunGira2(void) {
+    if (CantidadPulsos2 < pasostotales2) {
+        PULSO2 = 1; // Ponemos en alto la salida para motor 2
+        wait_us(10);
+        PULSO2 = 0;
+        CantidadPulsos2++; // Contamos los pulsos para motor 2
+        NUMVUELTAS2 = CantidadPulsos2 / STEPS; // Calculamos el número de vueltas que llevamos para motor 2
+    } else {
+        Girando2 = true;
+        Pulsos2.detach(); // Detenemos los pulsos para motor 2
+        ENABLENEMA2 = 1; // Deshabilitamos el ENABLE del motor 2 para que no gire
+        DireccionNema2 = 0;
+    }
+}
+
+void PressButtonPos1(void) {
+    NumSensorPos1 = true; // Alistamos la variable para el siguiente antirrebote
+}
+
+void PressButtonPos2(void) {
+    NumSensorPos2 = true; // Alistamos la variable para el siguiente antirrebote
+}
