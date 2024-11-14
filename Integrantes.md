@@ -9,7 +9,7 @@ Este documento presenta al grupo de trabajo del proyecto integrador de la Univer
 3. **Laura Fernanda Hernandez Rodriguez** -  Área de Trabajo: Programación y Ensamble Electronico
 4. **Roland Alfredo Lara Rodriguez** - Área de Trabajo: Programación y Ensamble Electronico
 5. **Nicolás Andrés Cuartas Castro** -  Área de Trabajo: Programación y Ensamble Electronico
-6. **Christian Camilo Caicedo Pena** - Área de Trabajo 6
+6. **Christian Camilo Caicedo Peña** - Área de Trabajo: Documentación
 7. **Jairo David Casallas Baquero** - Área de Trabajo 7
 8. **David Santiago Laiton Gutierrez** - Área de Trabajo 8
 9. **German Moreno Calderon** - Área de Trabajo 9
