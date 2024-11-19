@@ -103,10 +103,6 @@ int main(void)
             DireccionNema2 = Direccion2;
             Pulsos2.attach(&FunGira2, Periodo); // Creamos los pulsos para motor 2
         }
-        else
-        {
-            leds=0;
-        }
         ThisThread::sleep_for(50ms);
     }
 }
