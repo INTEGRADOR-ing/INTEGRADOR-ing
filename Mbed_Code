@@ -1,5 +1,32 @@
 #include "mbed.h"
 BufferedSerial MATLAB(USBTX, USBRX, 9600); // tx, rx
+// Pines para controlar el NEMA a través del driver
+DigitalOut ENABLENEMA1(PD_7);
+DigitalOut DireccionNema1(PD_6);
+DigitalOut PULSO1(PD_5); // Definimos el pin de salida
+
+DigitalOut ENABLENEMA2(PB_1); // Habilitación para motor 2
+DigitalOut DireccionNema2(PC_2); // Dirección para motor 2
+DigitalOut PULSO2(PF_4); // Pin de salida para motor 2
+//.................................finales de carrera...........................
+InterruptIn FINX0(PF_3, PullUp); 
+InterruptIn FINX1(PF_5, PullUp); 
+InterruptIn FINZ0(PF_10, PullUp);
+InterruptIn FINZ1(PF_2, PullUp);
+//..................................Sensores moviles..........................
+InterruptIn INDX0(PF_13,PullUp); 
+InterruptIn INDX1(PE_9,PullUp);
+InterruptIn INDZ0(PE_11,PullUp); 
+InterruptIn INDZ1(PF_14,PullUp);
+//..................................PT100......................
+AnalogIn PT100_1(PA_3); // Configura la primera entrada digital
+AnalogIn PT100_2(PC_0); // Configura la segunda entrada digital
+//..................leds pruebas
+DigitalOut leds(LED1); 
+DigitalOut leds2(LED2);
+//............................. Creamos un ticker para los pulsos
+Ticker Pulsos1;
+Ticker Pulsos2;
 
 float Periodo; // Inicializamos la variable en la que se calcula la frecuencia a través de los RPM
 const int STEPS = 400; // Inicializamos la constante en la que se encuentran los microsteps del driver
@@ -11,45 +38,34 @@ bool Girando1 = true; // Estado de giro para motor 1
 bool Girando2 = true; // Estado de giro para motor 2
 volatile int64_t CantidadPulsos1 = 0; // Pulsos para motor 1
 volatile int64_t CantidadPulsos2 = 0; // Pulsos para motor 2
-// Creamos un ticker para los pulsos
-Ticker Pulsos1;
-Ticker Pulsos2;
-
-void FunGira1(void);
-void FunGira2(void);
-
-// Pines para controlar el NEMA a través del driver
-DigitalOut ENABLENEMA1(PD_7);
-DigitalOut DireccionNema1(PD_6);
-DigitalOut PULSO1(PD_5); // Definimos el pin de salida
-
-DigitalOut ENABLENEMA2(PB_1); // Habilitación para motor 2
-DigitalOut DireccionNema2(PC_2); // Dirección para motor 2
-DigitalOut PULSO2(PF_4); // Pin de salida para motor 2
-
-InterruptIn FINX0(PF_3, PullUp); 
-InterruptIn FINX1(PF_5, PullUp); // Sensor para motor 2
 volatile bool motorState1 = false; // Estado motor 1
 volatile bool motorState2 = false; // Estado motor 2
-
-Timeout TimeAntirrebotePos;
-// Inicializamos en true para que pueda detectar el primer pulso
-volatile bool NumSensorPos1 = true;
-volatile bool NumSensorPos2 = true;
-
-// Creamos las interrupciones generadas por los pines de entrada
-InterruptIn ButtonPos1(PA_10); 
-InterruptIn ButtonPos2(PA_11); // Botón para motor 2
-
+char CADENA[600];
+int LONGITUD, LONGITUD1;
+int valor_PT1=0, valor_PT2 = 0;
+void FunGira1(void);
+void FunGira2(void);
 // Función para configurar los datos de los esclavos
-void sensoresCarrera1();
-void sensoresCarrera2();
+void sensoresCarreraX1();
+void sensoresCarreraX2();
+void sensoresCarreraZ1();
+void sensoresCarreraZ2();
+void inductivoX1();
+void inductivoX2();
+void inductivoZ1();
+void inductivoZ2();
+void leer_datos();
 
 int main(void)
 {
-    //FINX0.fall(&sensoresCarrera1);
-    //FINX1.fall(&sensoresCarrera2);
-
+    FINX0.fall(&sensoresCarreraX1);
+    FINX1.fall(&sensoresCarreraX2);
+    FINZ0.fall(&sensoresCarreraZ1);
+    FINZ1.fall(&sensoresCarreraZ2);
+    INDX0.fall(&inductivoX1);
+    INDX1.fall(&inductivoX2);
+    INDZ0.fall(&inductivoZ1);
+    INDZ1.fall(&inductivoZ2);
     // Inicializamos los pines de salida para parar los NEMA
     ENABLENEMA1 = 1; 
     ENABLENEMA2 = 1; 
@@ -57,16 +73,10 @@ int main(void)
     DireccionNema2 = 0;
 
     while (true) {
-        /*char bufferOUT[200]; // Creamos buffer para enviar el mensaje
-        // Guardamos lo que se envía en un arreglo y sacamos el tamaño del arreglo
-        if (Girando1 || Girando2) {
-            int TAM = snprintf(bufferOUT, sizeof(bufferOUT), "%d,%d,%d,%d,%d,%d \n", 
-                               NUMVUELTAS1, NUMVUELTAS2, Girando1, Girando2);
-            MATLAB.write(bufferOUT, TAM); // Enviamos el arreglo por el Serial
-            ThisThread::sleep_for(50ms);
-        }*/
-
+        
+        leer_datos();
         if (MATLAB.readable()) { // Recibimos datos desde MATLAB
+            leds=1;
             char BufferIN[800]; // Creamos buffer para almacenar los datos recibidos
             int GIROS1 = 0, RPM1 = 0, Direccion1 = 0;
             int GIROS2 = 0, RPM2 = 0, Direccion2 = 0;
@@ -93,38 +103,25 @@ int main(void)
             DireccionNema2 = Direccion2;
             Pulsos2.attach(&FunGira2, Periodo); // Creamos los pulsos para motor 2
         }
+        else
+        {
+            leds=0;
+        }
         ThisThread::sleep_for(50ms);
     }
 }
-
-void sensoresCarrera1() {
-    do {
-        if (FINX0.read() == 1) {
-            ENABLENEMA1 = 0; // Apagar el motor 1 (disable)
-            motorState1 = false;
-        } else {
-            ENABLENEMA1 = 1; // Encender el motor 1 (enable)
-            motorState1 = true;
-        }
-    } while (FINX0 == 0);
+void leer_datos() {
+    valor_PT1 = PT100_1.read_u16();
+    valor_PT2 = PT100_2.read_u16();
+    ThisThread::sleep_for(100ms);
+    LONGITUD1 = sprintf(CADENA, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", valor_PT1, valor_PT2, FINX0.read(), FINX1.read(),FINZ0.read(), FINZ1.read(),INDX0.read(),INDX1.read(),INDZ0.read(),INDZ1.read());      
+    MATLAB.write(CADENA, LONGITUD1);
+    ThisThread::sleep_for(100ms);
 }
-
-void sensoresCarrera2() {
-    do {
-        if (FINX1.read() == 1) {
-            ENABLENEMA2 = 0; // Apagar el motor 2 (disable)
-            motorState2 = false;
-        } else {
-            ENABLENEMA2 = 1; // Encender el motor 2 (enable)
-            motorState2 = true;
-        }
-    } while (FINX1 == 0);
-}
-
 void FunGira1(void) {
     if (CantidadPulsos1 < pasostotales1) {
         PULSO1 = 1; // Ponemos en alto la salida para motor 1
-        wait_us(10);
+        wait_us(3);
         PULSO1 = 0;
         CantidadPulsos1++; // Contamos los pulsos para motor 1
         NUMVUELTAS1 = CantidadPulsos1 / STEPS; // Calculamos el número de vueltas que llevamos para motor 1
@@ -139,7 +136,7 @@ void FunGira1(void) {
 void FunGira2(void) {
     if (CantidadPulsos2 < pasostotales2) {
         PULSO2 = 1; // Ponemos en alto la salida para motor 2
-        wait_us(10);
+        wait_us(3);
         PULSO2 = 0;
         CantidadPulsos2++; // Contamos los pulsos para motor 2
         NUMVUELTAS2 = CantidadPulsos2 / STEPS; // Calculamos el número de vueltas que llevamos para motor 2
@@ -150,11 +147,130 @@ void FunGira2(void) {
         DireccionNema2 = 0;
     }
 }
-
-void PressButtonPos1(void) {
-    NumSensorPos1 = true; // Alistamos la variable para el siguiente antirrebote
+void sensoresCarreraX1() {
+    if (FINX0.read() == 1) {
+        ENABLENEMA1 = 0; // Deshabilitar motor 1
+        motorState1 = false;
+    } else {
+        // Si el motor estaba girando en la dirección opuesta, cambiar la dirección
+        if (!motorState1 && DireccionNema1 == 1) {
+            DireccionNema1 = 0; // Cambiar dirección
+        } else if (!motorState1 && DireccionNema1 == 0) {
+            DireccionNema1 = 1; // Cambiar dirección
+        }
+        ENABLENEMA1 = 1; // Habilitar motor 1
+        motorState1 = true;
+    }
 }
 
-void PressButtonPos2(void) {
-    NumSensorPos2 = true; // Alistamos la variable para el siguiente antirrebote
+void sensoresCarreraX2() {
+    if (FINX1.read() == 1) {
+        ENABLENEMA1 = 0; // Deshabilitar motor 1
+        motorState1 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState1 && DireccionNema1 == 1) {
+            DireccionNema1 = 0; // Cambiar dirección
+        } else if (!motorState1 && DireccionNema1 == 0) {
+            DireccionNema1 = 1; // Cambiar dirección
+        }
+        ENABLENEMA1 = 1; // Habilitar motor 1
+        motorState1 = true;
+    }
+}
+
+void sensoresCarreraZ1() {
+    if (FINZ0.read() == 1) {
+        ENABLENEMA2 = 0; // Deshabilitar motor 2
+        motorState2 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState2 && DireccionNema2 == 1) {
+            DireccionNema2 = 0; // Cambiar dirección
+        } else if (!motorState2 && DireccionNema2 == 0) {
+            DireccionNema2 = 1; // Cambiar dirección
+        }
+        ENABLENEMA2 = 1; // Habilitar motor 2
+        motorState2 = true;
+    }
+}
+
+void sensoresCarreraZ2() {
+    if (FINZ1.read() == 1) {
+        ENABLENEMA2 = 0; // Deshabilitar motor 2
+        motorState2 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState2 && DireccionNema2 == 1) {
+            DireccionNema2 = 0; // Cambiar dirección
+        } else if (!motorState2 && DireccionNema2 == 0) {
+            DireccionNema2 = 1; // Cambiar dirección
+        }
+        ENABLENEMA2 = 1; // Habilitar motor 2
+        motorState2 = true;
+    }
+}
+
+void inductivoX1() {
+    if (INDX0.read() == 1) {
+        ENABLENEMA1 = 0; // Deshabilitar motor 1
+        motorState1 = false;
+    } else {
+        // Si el motor estaba girando en la dirección opuesta, cambiar la dirección
+        if (!motorState1 && DireccionNema1 == 1) {
+            DireccionNema1 = 0; // Cambiar dirección
+        } else if (!motorState1 && DireccionNema1 == 0) {
+            DireccionNema1 = 1; // Cambiar dirección
+        }
+        ENABLENEMA1 = 1; // Habilitar motor 1
+        motorState1 = true;
+    }
+}
+
+void inductivoX2() {
+    if (INDX1.read() == 1) {
+        ENABLENEMA1 = 0; // Deshabilitar motor 1
+        motorState1 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState1 && DireccionNema1 == 1) {
+            DireccionNema1 = 0; // Cambiar dirección
+        } else if (!motorState1 && DireccionNema1 == 0) {
+            DireccionNema1 = 1; // Cambiar dirección
+        }
+        ENABLENEMA1 = 1; // Habilitar motor 1
+        motorState1 = true;
+    }
+}
+
+void inductivoZ1() {
+    if (INDZ0.read() == 1) {
+        ENABLENEMA2 = 0; // Deshabilitar motor 2
+        motorState2 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState2 && DireccionNema2 == 1) {
+            DireccionNema2 = 0; // Cambiar dirección
+        } else if (!motorState2 && DireccionNema2 == 0) {
+            DireccionNema2 = 1; // Cambiar dirección
+        }
+        ENABLENEMA2 = 1; // Habilitar motor 2
+        motorState2 = true;
+    }
+}
+
+void inductivoZ2() {
+    if (INDZ1.read() == 1) {
+        ENABLENEMA2 = 0; // Deshabilitar motor 2
+        motorState2 = false;
+    } else {
+        // Cambiar dirección si es necesario
+        if (!motorState2 && DireccionNema2 == 1) {
+            DireccionNema2 = 0; // Cambiar dirección
+        } else if (!motorState2 && DireccionNema2 == 0) {
+            DireccionNema2 = 1; // Cambiar dirección
+        }
+        ENABLENEMA2 = 1; // Habilitar motor 2
+        motorState2 = true;
+    }
 }
