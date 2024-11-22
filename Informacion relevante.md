@@ -28,4 +28,6 @@ Máquina que simula una *pick and place* industrial, usando dos motores paso a p
 
 ---
 
+## NOTA: La version utilizada para la app de matlab es la version 2022b y se uso mbed keil para programar la stm32 o para la blupill
+
 **Universidad ECCI - 2024**
