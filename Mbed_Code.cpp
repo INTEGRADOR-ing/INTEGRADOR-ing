@@ -8,6 +8,10 @@ DigitalOut PULSO1(PD_5); // Definimos el pin de salida
 DigitalOut ENABLENEMA2(PB_1); // Habilitación para motor 2
 DigitalOut DireccionNema2(PC_2); // Dirección para motor 2
 DigitalOut PULSO2(PF_4); // Pin de salida para motor 2
+//.............................Leds caja ......................................
+DigitalOut ledStart(D3);
+DigitalOut ledStop(D4);
+DigitalOut ledReset(D5);
 //.................................finales de carrera...........................
 InterruptIn FINX0(PF_3, PullUp); 
 InterruptIn FINX1(PF_5, PullUp); 
@@ -58,6 +62,12 @@ void leer_datos();
 
 int main(void)
 {
+    // inicializamos los LEDs en estado de apagado 
+    ledStart = 0;
+    ledStop = 0;
+    ledReset = 0;
+
+    // 
     FINX0.fall(&sensoresCarreraX1);
     FINX1.fall(&sensoresCarreraX2);
     FINZ0.fall(&sensoresCarreraZ1);
