@@ -4,7 +4,7 @@ Este documento presenta al grupo de trabajo del proyecto integrador de la Univer
 
 ## Integrantes y Áreas de Trabajo
 
-1. **Juan David Sandoval Valencia** - Área de Trabajo: Programación y Ensamble Electrónico  
+1. [**Juan David Sandoval Valencia**](https://github.com/juandsandoval8) - Área de Trabajo: Programación y Ensamble Electrónico  
 2. **Sergio David Ricardo León** - Área de Trabajo: Programación y Ensamble Electrónico  
 3. **Laura Fernanda Hernández Rodríguez** - Área de Trabajo: Programación y Ensamble Electrónico  
 4. **Roland Alfredo Lara Rodríguez** - Área de Trabajo: Programación y Ensamble Electrónico  
